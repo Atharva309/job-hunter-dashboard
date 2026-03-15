@@ -11,7 +11,7 @@ from anthropic import Anthropic
 
 EXCEL_FILE = "job_tracker.xlsx"
 PDF_FILE = "portfolio.pdf"
-MODEL_NAME = "claude-sonnet-4-20250514"
+MODEL_NAME = "claude-3-5-haiku-20241022"
 
 # Will be initialized inside process_jobs
 client = None
@@ -109,7 +109,7 @@ def scrape_url(url):
                 text_parts.append(f"({element.get('href')})")
                 
         text = " ".join(text_parts)
-        return text[:12000]
+        return text[:6000]
     except Exception as e:
         return None
 
@@ -121,7 +121,7 @@ def analyze_with_claude(scraped_text, pdf_b64):
         
         message = client.messages.create(
             model=MODEL_NAME,
-            max_tokens=1500,
+            max_tokens=1000,
             system=SYSTEM_PROMPT,
             messages=[
                 {
@@ -210,6 +210,7 @@ def process_jobs():
                     break
                     
         if not text:
+            ws.cell(row=curr_row, column=3).value = "Failed to scrape"
             ws.cell(row=curr_row, column=11).value = "Failed to scrape page."
             wb.save(EXCEL_FILE)
             print(f"✗ {company} → Failed to scrape target page")
