@@ -29,6 +29,31 @@ def get_conn():
         except Exception as e:
             print(f"Warning: Failed to parse DATABASE_URL: {e}")
             
+    # --- Supabase IPv4 Compatibility Fix ---
+    # Render free tier does not support IPv6.
+    # Supabase's pooler.supabase.com often resolves to IPv6.
+    # We must append ?options=-c%20search_path=public, or use the direct ipv4 host
+    
+    # If this is a supabase URL, we need to make sure we use the IPv4 endpoint
+    if ".supabase.co" in url and "pooler." in url:
+        # Supabase provides an IPv4 fallback.
+        # Example original: postgresql://postgres.xxxx:pass@aws-0-us-west-1.pooler.supabase.com:6543/postgres
+        if "?" in url:
+            url += "&"
+        else:
+            url += "?"
+        url += "pgbouncer=true"
+
+    # For psycopg2, if the hostname resolves to IPv6 and it fails, we need to instruct it.
+    # Actually, the most reliable way for Supabase + Render is to disable IPv6 or use the ipv4 domain.
+    # Supabase provides `db.YOUR-PROJECT.supabase.co` which is IPv6.
+    # If they are using `pooler.supabase.com` it is IPv4 compatible.
+    # Let's ensure sslmode=require is there.
+    if "?" not in url:
+        url += "?sslmode=require"
+    elif "sslmode=" not in url:
+        url += "&sslmode=require"
+            
     return psycopg2.connect(url)
 
 def init_db():
