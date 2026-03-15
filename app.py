@@ -13,8 +13,13 @@ app = FastAPI(title="Job Hunter Dashboard")
 
 BASE_DIR = pathlib.Path(__file__).parent.resolve()
 
-# Initialize database on startup
-db.init_db()
+# Initialize database on startup safely
+try:
+    db.init_db()
+    print("Database connected and initialized.")
+except Exception as e:
+    print(f"DATABASE INIT ERROR: {e}")
+    print("The server will still start, but database endpoints may fail.")
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
