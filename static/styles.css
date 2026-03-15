@@ -354,3 +354,169 @@ td a {
     transform: translateY(0);
     opacity: 1;
 }
+
+/* Applied Counter Badge */
+.applied-counter {
+    background: var(--primary);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    margin-left: 8px;
+}
+
+/* Company Row Actions */
+.company-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-icon {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-icon:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-icon.scan-single:hover {
+    background: rgba(79, 70, 229, 0.3);
+    color: var(--primary-hover);
+    border-color: var(--primary);
+}
+
+.btn-icon.delete:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--error);
+    border-color: var(--error);
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.modal-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 2rem 2.5rem;
+    text-align: center;
+    max-width: 420px;
+    width: 90%;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal-card h3 {
+    font-size: 1.3rem;
+    margin-bottom: 0.75rem;
+}
+
+.modal-card p {
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.modal-cancel {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: var(--text-muted) !important;
+}
+
+.modal-cancel:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Applied List */
+.applied-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.applied-total {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--secondary);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.applied-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.applied-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.15);
+    transition: all 0.2s;
+}
+
+.applied-item:hover {
+    border-color: rgba(79, 70, 229, 0.3);
+}
+
+.applied-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.applied-info strong {
+    font-size: 0.95rem;
+}
+
+.applied-info small {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.btn-remove {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all 0.2s;
+}
+
+.btn-remove:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--error);
+    border-color: var(--error);
+}

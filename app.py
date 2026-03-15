@@ -4,15 +4,17 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import openpyxl
 import os
+import json
 import pathlib
 import traceback
 
 # Import the core agent logic
-from job_agent import process_jobs, EXCEL_FILE, init_excel
+from job_agent import process_jobs, process_single_company, EXCEL_FILE, init_excel
 
 app = FastAPI(title="Job Hunter Dashboard")
 
 BASE_DIR = pathlib.Path(__file__).parent.resolve()
+APPLIED_FILE = str(BASE_DIR / "applied.json")
 
 # Ensure excel exists on startup
 if not os.path.exists(EXCEL_FILE):
@@ -24,6 +26,24 @@ class CompanyPayload(BaseModel):
     name: str
     url: str
 
+class AppliedPayload(BaseModel):
+    company: str
+    title: str
+    apply_link: str = ""
+    location: str = ""
+
+# --- Helpers ---
+def load_applied():
+    if os.path.exists(APPLIED_FILE):
+        with open(APPLIED_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_applied(data):
+    with open(APPLIED_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+# --- Routes ---
 @app.get("/")
 def serve_index():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
@@ -37,10 +57,8 @@ def get_jobs():
     ws = wb.active
     jobs = []
     
-    # Skip header
     for r in range(2, ws.max_row + 1):
         matched = ws.cell(row=r, column=3).value
-        # Only return rows that have actual job matches (not empty, not errors, not 'No matches found')
         if matched and matched != "No matches found" and "Error" not in str(matched) and "Failed" not in str(matched):
             jobs.append({
                 "company": ws.cell(row=r, column=1).value,
@@ -69,7 +87,6 @@ def get_companies():
         name = ws.cell(row=r, column=1).value
         url = ws.cell(row=r, column=2).value
         
-        # Avoid duplicate companies in list
         if name and not any(c['name'] == name for c in companies):
             matched = ws.cell(row=r, column=3).value
             status = "Pending"
@@ -99,25 +116,89 @@ def add_company(payload: CompanyPayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/companies/{company_name}")
+def delete_company(company_name: str):
+    """Remove all rows for a company from the Excel tracker."""
+    try:
+        wb = openpyxl.load_workbook(EXCEL_FILE)
+        ws = wb.active
+        rows_to_delete = []
+        for r in range(2, ws.max_row + 1):
+            if ws.cell(row=r, column=1).value == company_name:
+                rows_to_delete.append(r)
+        
+        if not rows_to_delete:
+            raise HTTPException(status_code=404, detail=f"Company '{company_name}' not found")
+        
+        # Delete from bottom to top so row indices don't shift
+        for r in sorted(rows_to_delete, reverse=True):
+            ws.delete_rows(r)
+        
+        wb.save(EXCEL_FILE)
+        return {"status": "success", "message": f"Removed {company_name}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/scan")
 def trigger_scan():
-    """Run the job scan. Wrapped in try/except so it NEVER crashes the server."""
+    """Run the job scan for ALL pending companies."""
     try:
         result = process_jobs()
-        
-        # If process_jobs returned None (shouldn't happen, but safety net)
         if result is None:
             return {"status": "success", "message": "Scan finished (no status returned)."}
-        
-        # If process_jobs reported an error
         if result.get("status") == "error":
             return {"status": "error", "message": result.get("message", "Unknown error")}
-        
         return {"status": "success", "message": result.get("message", "Scan complete")}
     except Exception as e:
         tb = traceback.format_exc()
         print(f"SCAN ERROR: {tb}")
         return {"status": "error", "message": str(e)}
+
+@app.post("/api/scan/{company_name}")
+def scan_single(company_name: str):
+    """Run the job scan for a SINGLE company."""
+    try:
+        result = process_single_company(company_name)
+        if result is None:
+            return {"status": "success", "message": "Scan finished (no status returned)."}
+        if result.get("status") == "error":
+            return {"status": "error", "message": result.get("message", "Unknown error")}
+        return {"status": "success", "message": result.get("message", "Scan complete")}
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"SCAN ERROR: {tb}")
+        return {"status": "error", "message": str(e)}
+
+# --- Applied Jobs ---
+@app.get("/api/applied")
+def get_applied():
+    data = load_applied()
+    return {"count": len(data), "jobs": data}
+
+@app.post("/api/applied")
+def mark_applied(payload: AppliedPayload):
+    data = load_applied()
+    entry = {
+        "company": payload.company,
+        "title": payload.title,
+        "apply_link": payload.apply_link,
+        "location": payload.location,
+        "applied_at": __import__('datetime').datetime.now().isoformat()
+    }
+    data.append(entry)
+    save_applied(data)
+    return {"status": "success", "count": len(data), "message": f"Marked as applied: {payload.title} @ {payload.company}"}
+
+@app.delete("/api/applied/{index}")
+def remove_applied(index: int):
+    data = load_applied()
+    if index < 0 or index >= len(data):
+        raise HTTPException(status_code=404, detail="Invalid index")
+    removed = data.pop(index)
+    save_applied(data)
+    return {"status": "success", "count": len(data), "message": f"Removed {removed['title']}"}
 
 if __name__ == "__main__":
     import uvicorn

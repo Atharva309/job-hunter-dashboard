@@ -11,7 +11,7 @@ from anthropic import Anthropic
 
 EXCEL_FILE = "job_tracker.xlsx"
 PDF_FILE = "portfolio.pdf"
-MODEL_NAME = "claude-3-5-haiku-20241022"
+MODEL_NAME = "claude-sonnet-4-20250514"
 
 # Will be initialized inside process_jobs
 client = None
@@ -261,6 +261,99 @@ def process_jobs():
         time.sleep(2) # polite delay
 
     return {"status": "success", "message": "Scraping complete!"}
+
+def process_single_company(company_name):
+    """Scan a single company by name. Reuses the same logic as process_jobs but for one row."""
+    global client
+    
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return {"status": "error", "message": "ANTHROPIC_API_KEY not set."}
+    
+    init_excel()
+    
+    if not os.path.exists(PDF_FILE):
+        return {"status": "error", "message": f"{PDF_FILE} not found."}
+    
+    with open(PDF_FILE, "rb") as f:
+        pdf_b64 = base64.b64encode(f.read()).decode("utf-8")
+    
+    wb = openpyxl.load_workbook(EXCEL_FILE)
+    ws = wb.active
+    
+    # Find the row for this company
+    target_row = None
+    for r in range(2, ws.max_row + 1):
+        if ws.cell(row=r, column=1).value == company_name:
+            target_row = r
+            break
+    
+    if not target_row:
+        return {"status": "error", "message": f"Company '{company_name}' not found in tracker."}
+    
+    url = ws.cell(row=target_row, column=2).value
+    if not url:
+        return {"status": "error", "message": f"No URL set for '{company_name}'."}
+    
+    # Clear previous results for this company
+    for col in range(3, 12):
+        ws.cell(row=target_row, column=col).value = None
+    wb.save(EXCEL_FILE)
+    
+    # Scrape
+    text = scrape_url(url)
+    if not text or len(text) < 200:
+        for suffix in ["/jobs", "/careers", "/openings"]:
+            base = url.rstrip('/')
+            fallback_text = scrape_url(base + suffix)
+            if fallback_text and len(fallback_text) > 200:
+                text = fallback_text
+                break
+    
+    if not text:
+        ws.cell(row=target_row, column=3).value = "Failed to scrape"
+        ws.cell(row=target_row, column=11).value = "Failed to scrape page."
+        wb.save(EXCEL_FILE)
+        return {"status": "error", "message": f"Failed to scrape {company_name}"}
+    
+    # Claude API
+    results = analyze_with_claude(text, pdf_b64)
+    
+    if results is None:
+        ws.cell(row=target_row, column=3).value = "Error parsing from Claude"
+        wb.save(EXCEL_FILE)
+        return {"status": "error", "message": f"Claude failed to parse results for {company_name}"}
+    
+    if len(results) == 0:
+        ws.cell(row=target_row, column=3).value = "No matches found"
+        wb.save(EXCEL_FILE)
+        return {"status": "success", "message": f"{company_name}: No matching jobs found."}
+    
+    # Write results
+    for i, job in enumerate(results):
+        row = target_row + i
+        if i > 0:
+            ws.insert_rows(row)
+            ws.cell(row=row, column=1).value = company_name
+            ws.cell(row=row, column=2).value = url
+        
+        for col in [1, 2]:
+            ws.cell(row=row, column=col).fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+        
+        ws.cell(row=row, column=3).value = job.get("job_title", "")
+        ws.cell(row=row, column=4).value = job.get("apply_link", "")
+        ws.cell(row=row, column=5).value = job.get("location", "")
+        ws.cell(row=row, column=6).value = job.get("sponsorship", "")
+        ws.cell(row=row, column=7).value = job.get("entry_level", "")
+        ws.cell(row=row, column=8).value = job.get("date_posted", "")
+        ws.cell(row=row, column=9).value = job.get("match_score", "")
+        ws.cell(row=row, column=11).value = job.get("notes", "")
+        
+        for col in range(3, 12):
+            if col != 10:
+                ws.cell(row=row, column=col).fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    
+    wb.save(EXCEL_FILE)
+    return {"status": "success", "message": f"{company_name}: {len(results)} job(s) found!"}
 
 if __name__ == "__main__":
     process_jobs()
