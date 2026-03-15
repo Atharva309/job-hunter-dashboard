@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atharva's Job Agent</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <div class="logo-icon">Target</div>
+                <h2>Job Hunter</h2>
+            </div>
+            
+            <nav class="nav-menu">
+                <button class="nav-btn active" id="nav-jobs">Jobs List</button>
+                <button class="nav-btn" id="nav-companies">Companies</button>
+            </nav>
+
+            <div class="actions-area">
+                <button id="btn-scan" class="action-btn scan-btn">Scan Companies</button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <h1 id="page-title">Matched Jobs</h1>
+                <div class="header-status">
+                    <span id="scan-status" class="status-badge idle">Idle</span>
+                </div>
+            </header>
+
+            <!-- Jobs View -->
+            <section id="view-jobs" class="view-section active">
+                <div class="jobs-grid" id="jobs-container">
+                    <!-- Job cards will be injected here -->
+                    <div class="empty-state" id="jobs-empty-state">
+                        <p>No jobs found. Add companies and run a scan!</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Companies View -->
+            <section id="view-companies" class="view-section">
+                <div class="add-company-card panel">
+                    <h3>Add New Company to Track</h3>
+                    <form id="add-company-form" class="form-row">
+                        <input type="text" id="company-name" placeholder="Company Name (e.g., Google)" required>
+                        <input type="url" id="company-url" placeholder="Career Page URL" required>
+                        <button type="submit" class="action-btn">Add Company</button>
+                    </form>
+                </div>
+
+                <div class="companies-list panel">
+                    <h3>Tracked Companies</h3>
+                    <div class="table-container">
+                        <table id="companies-table">
+                            <thead>
+                                <tr>
+                                    <th>Company</th>
+                                    <th>Career URL</th>
+                                    <th>Scan Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="companies-tbody">
+                                <!-- Company rows inject here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast">Message</div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

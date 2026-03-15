@@ -1,0 +1,8 @@
+anthropic
+openpyxl
+requests
+beautifulsoup4
+PyPDF2
+fastapi
+uvicorn
+python-multipart
