@@ -2,11 +2,30 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+import urllib.parse
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_conn():
     """Get a database connection."""
-    return psycopg2.connect(DATABASE_URL)
+    # Handle special characters in password by properly URL encoding them
+    url = DATABASE_URL
+    if url and "@" in url:
+        try:
+            # Format: postgresql://user:pass@host:port/db
+            schema_part, rest = url.split("://", 1)
+            auth_part, host_part = rest.split("@", 1)
+            
+            if ":" in auth_part:
+                user, pwd = auth_part.split(":", 1)
+                # If password contains special chars but isn't URL-encoded yet
+                if "%" not in pwd or " " in pwd:  # basic heuristic
+                    pwd = urllib.parse.quote(pwd)
+                url = f"{schema_part}://{user}:{pwd}@{host_part}"
+        except Exception:
+            pass # Fallback to raw URL if parsing fails
+            
+    return psycopg2.connect(url)
 
 def init_db():
     """Create tables if they don't exist."""
