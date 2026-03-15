@@ -4,26 +4,30 @@ from psycopg2.extras import RealDictCursor
 
 import urllib.parse
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 def get_conn():
     """Get a database connection."""
-    # Handle special characters in password by properly URL encoding them
-    url = DATABASE_URL
-    if url and "@" in url:
+    url = DATABASE_URL.strip()
+    if url.startswith("postgres://") or url.startswith("postgresql://"):
         try:
-            # Format: postgresql://user:pass@host:port/db
-            schema_part, rest = url.split("://", 1)
-            auth_part, host_part = rest.split("@", 1)
-            
-            if ":" in auth_part:
-                user, pwd = auth_part.split(":", 1)
-                # If password contains special chars but isn't URL-encoded yet
-                if "%" not in pwd or " " in pwd:  # basic heuristic
-                    pwd = urllib.parse.quote(pwd)
-                url = f"{schema_part}://{user}:{pwd}@{host_part}"
-        except Exception:
-            pass # Fallback to raw URL if parsing fails
+            # Safely parse the URL
+            parsed = urllib.parse.urlparse(url)
+            # Unquote password in case it's already encoded, then quote it properly
+            if parsed.password:
+                raw_pwd = urllib.parse.unquote(parsed.password)
+                safe_pwd = urllib.parse.quote(raw_pwd)
+                
+                # Rebuild the netloc with the safely quoted password
+                netloc = f"{parsed.username}:{safe_pwd}@{parsed.hostname}"
+                if parsed.port:
+                    netloc += f":{parsed.port}"
+                
+                # Rebuild the full URL
+                parsed = parsed._replace(netloc=netloc)
+                url = urllib.parse.urlunparse(parsed)
+        except Exception as e:
+            print(f"Warning: Failed to parse DATABASE_URL: {e}")
             
     return psycopg2.connect(url)
 
