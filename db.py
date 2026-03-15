@@ -31,24 +31,17 @@ def get_conn():
             
     # --- Supabase IPv4 Compatibility Fix ---
     # Render free tier does not support IPv6.
-    # Supabase's pooler.supabase.com often resolves to IPv6.
-    # We must append ?options=-c%20search_path=public, or use the direct ipv4 host
-    
-    # If this is a supabase URL, we need to make sure we use the IPv4 endpoint
+    # Supabase's pooler.supabase.com often resolves to IPv6 but has an IPv4 fallback if configured.
     if ".supabase.co" in url and "pooler." in url:
-        # Supabase provides an IPv4 fallback.
-        # Example original: postgresql://postgres.xxxx:pass@aws-0-us-west-1.pooler.supabase.com:6543/postgres
         if "?" in url:
-            url += "&"
+            url += "&pgbouncer=true"
         else:
-            url += "?"
-        url += "pgbouncer=true"
+            url += "?pgbouncer=true"
+            
+        # The pooler MUST use port 6543, port 5432 is IPv6 direct-only
+        if ":5432/" in url:
+            url = url.replace(":5432/", ":6543/")
 
-    # For psycopg2, if the hostname resolves to IPv6 and it fails, we need to instruct it.
-    # Actually, the most reliable way for Supabase + Render is to disable IPv6 or use the ipv4 domain.
-    # Supabase provides `db.YOUR-PROJECT.supabase.co` which is IPv6.
-    # If they are using `pooler.supabase.com` it is IPv4 compatible.
-    # Let's ensure sslmode=require is there.
     if "?" not in url:
         url += "?sslmode=require"
     elif "sslmode=" not in url:
