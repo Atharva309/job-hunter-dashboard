@@ -77,8 +77,7 @@ def init_excel():
         # Freeze top row
         ws.freeze_panes = "A2"
         wb.save(EXCEL_FILE)
-        print(f"Created {EXCEL_FILE}. Please fill in columns A and B, then run this script again.")
-        sys.exit(0)
+        print(f"Created {EXCEL_FILE}.")
 
 def scrape_url(url):
     headers = {
