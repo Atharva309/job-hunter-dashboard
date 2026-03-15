@@ -59,7 +59,11 @@ def get_jobs():
     
     for r in range(2, ws.max_row + 1):
         matched = ws.cell(row=r, column=3).value
-        if matched and matched != "No matches found" and "Error" not in str(matched) and "Failed" not in str(matched):
+        status = ws.cell(row=r, column=10).value
+        # Skip applied jobs and non-matches
+        if status == "Applied":
+            continue
+        if matched and "No matches" not in str(matched) and "Error" not in str(matched) and "Failed" not in str(matched):
             jobs.append({
                 "company": ws.cell(row=r, column=1).value,
                 "url": ws.cell(row=r, column=2).value,
@@ -179,6 +183,7 @@ def get_applied():
 
 @app.post("/api/applied")
 def mark_applied(payload: AppliedPayload):
+    # 1. Save to applied.json
     data = load_applied()
     entry = {
         "company": payload.company,
@@ -189,6 +194,19 @@ def mark_applied(payload: AppliedPayload):
     }
     data.append(entry)
     save_applied(data)
+    
+    # 2. Mark as "Applied" in Excel column 10 so it won't show in Jobs or get re-scanned
+    try:
+        wb = openpyxl.load_workbook(EXCEL_FILE)
+        ws = wb.active
+        for r in range(2, ws.max_row + 1):
+            if ws.cell(row=r, column=1).value == payload.company and ws.cell(row=r, column=3).value == payload.title:
+                ws.cell(row=r, column=10).value = "Applied"
+                break
+        wb.save(EXCEL_FILE)
+    except Exception:
+        pass  # Non-critical, the job is still tracked in applied.json
+    
     return {"status": "success", "count": len(data), "message": f"Marked as applied: {payload.title} @ {payload.company}"}
 
 @app.delete("/api/applied/{index}")

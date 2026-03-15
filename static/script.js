@@ -116,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             showToast("✅ " + data.message);
             updateAppliedCount(data.count);
+            fetchJobs(); // Remove from job list immediately
         } catch (e) {
             showToast("❌ Failed to mark as applied");
         }
@@ -206,8 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td><span class="status-cell ${statusClass}">${company.status}</span></td>
                     <td>
                         <div class="company-actions">
-                            <button class="btn-icon scan-single" title="Scan this company">🔍 Scan</button>
-                            <button class="btn-icon delete" title="Remove this company">🗑️ Remove</button>
+                            <button class="btn-icon scan-single" title="Scan this company">Rescan</button>
+                            <button class="btn-icon delete" title="Remove this company">Remove</button>
                         </div>
                     </td>
                 `;
@@ -234,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         showToast("❌ Scan failed");
                     } finally {
                         btn.disabled = false;
-                        btn.textContent = "🔍 Scan";
+                        btn.textContent = "Rescan";
                         scanStatus.textContent = "Idle";
                         scanStatus.className = "status-badge idle";
                     }

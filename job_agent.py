@@ -22,7 +22,7 @@ You are a job search assistant helping an F1 international student named Atharva
 Candidate profile summary:
 - MS Data Science @ CU Boulder (graduating May 2026), GPA 3.9
 - Skills: Python, R, SQL, ML/DL, NLP, Computer Vision, ETL, FastAPI, AWS, Power BI, Tableau
-- Target roles: Data Science, ML Engineer, Data Engineer, AI Engineer, Analytics, Software Engineer (backend/data)
+- Target roles: Data Science, ML Engineer, Data Engineer, AI Engineer, Analytics, Software Engineer (backend/data), Business Analyst
 - NEEDS visa sponsorship (F1 OPT → H1B). Prioritize companies known to sponsor.
 
 You will receive scraped text from a company's career page.
@@ -183,6 +183,10 @@ def process_jobs():
         company = ws.cell(row=r, column=1).value
         url = ws.cell(row=r, column=2).value
         matched = ws.cell(row=r, column=3).value
+        status = ws.cell(row=r, column=10).value
+        # Skip applied jobs — they're done
+        if status == "Applied":
+            continue
         # If 'matched' is empty or contains an error from a previous run, retry it
         if company and url and (not matched or "Error" in str(matched) or "Failed" in str(matched)):
             rows_to_process.append((r, company, url))
@@ -224,7 +228,18 @@ def process_jobs():
             wb.save(EXCEL_FILE)
             continue
             
-        # 3. Write results
+        # 3. Filter out already-applied jobs
+        applied_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "applied.json")
+        applied_titles = set()
+        if os.path.exists(applied_file):
+            with open(applied_file, "r") as af:
+                for entry in json.load(af):
+                    if entry.get("company") == company:
+                        applied_titles.add(entry.get("title", "").lower().strip())
+        
+        results = [j for j in results if j.get("job_title", "").lower().strip() not in applied_titles]
+        
+        # 4. Write results
         if len(results) == 0:
             ws.cell(row=curr_row, column=3).value = "No matches found"
             print(f"✗ {company} → No matches")
@@ -280,23 +295,34 @@ def process_single_company(company_name):
     wb = openpyxl.load_workbook(EXCEL_FILE)
     ws = wb.active
     
-    # Find the row for this company
+    # Find the FIRST non-applied row for this company, or get URL from any row
     target_row = None
+    company_url = None
     for r in range(2, ws.max_row + 1):
         if ws.cell(row=r, column=1).value == company_name:
-            target_row = r
-            break
+            if not company_url:
+                company_url = ws.cell(row=r, column=2).value
+            if ws.cell(row=r, column=10).value != "Applied":
+                target_row = r
+                break
     
-    if not target_row:
+    if not company_url:
         return {"status": "error", "message": f"Company '{company_name}' not found in tracker."}
     
-    url = ws.cell(row=target_row, column=2).value
-    if not url:
-        return {"status": "error", "message": f"No URL set for '{company_name}'."}
+    # If all rows are applied, insert a fresh row for new results
+    if not target_row:
+        new_row = ws.max_row + 1
+        ws.cell(row=new_row, column=1).value = company_name
+        ws.cell(row=new_row, column=2).value = company_url
+        target_row = new_row
+        wb.save(EXCEL_FILE)
     
-    # Clear previous results for this company
+    url = company_url
+    
+    # Clear previous results on this row (but preserve the status column)
     for col in range(3, 12):
-        ws.cell(row=target_row, column=col).value = None
+        if col != 10:
+            ws.cell(row=target_row, column=col).value = None
     wb.save(EXCEL_FILE)
     
     # Scrape
@@ -327,6 +353,23 @@ def process_single_company(company_name):
         ws.cell(row=target_row, column=3).value = "No matches found"
         wb.save(EXCEL_FILE)
         return {"status": "success", "message": f"{company_name}: No matching jobs found."}
+    
+    # Filter out jobs the user has already applied to
+    applied_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "applied.json")
+    applied_titles = set()
+    if os.path.exists(applied_file):
+        with open(applied_file, "r") as af:
+            for entry in json.load(af):
+                if entry.get("company") == company_name:
+                    applied_titles.add(entry.get("title", "").lower().strip())
+    
+    results = [j for j in results if j.get("job_title", "").lower().strip() not in applied_titles]
+    
+    if len(results) == 0:
+        # Delete the temp row so it doesn't show as junk in the UI
+        ws.delete_rows(target_row)
+        wb.save(EXCEL_FILE)
+        return {"status": "success", "message": f"{company_name}: All found jobs were already applied to."}
     
     # Write results
     for i, job in enumerate(results):
