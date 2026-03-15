@@ -5,11 +5,9 @@ import json
 import base64
 import requests
 from bs4 import BeautifulSoup
-import openpyxl
-from openpyxl.styles import PatternFill, Font
 from anthropic import Anthropic
+import db
 
-EXCEL_FILE = "job_tracker.xlsx"
 PDF_FILE = "portfolio.pdf"
 MODEL_NAME = "claude-sonnet-4-20250514"
 
@@ -50,35 +48,6 @@ Return ONLY a raw JSON array, no markdown, no explanation:
 If zero jobs match all filters, return exactly: []
 """
 
-def init_excel():
-    if not os.path.exists(EXCEL_FILE):
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Jobs"
-        
-        headers = [
-            "Company Name", "Career Page URL", "Matched Job Title", 
-            "Job Apply Link", "Location", "Sponsorship Mentioned?", 
-            "Entry Level?", "Date Posted", "Match Score 1-10", 
-            "Status", "Notes"
-        ]
-        ws.append(headers)
-        
-        dark_blue_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-        light_blue_fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
-        light_green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-        white_font = Font(color="FFFFFF", bold=True)
-        
-        # Apply header formatting
-        for col_idx, cell in enumerate(ws[1], 1):
-            cell.fill = dark_blue_fill
-            cell.font = white_font
-            
-        # Freeze top row
-        ws.freeze_panes = "A2"
-        wb.save(EXCEL_FILE)
-        print(f"Created {EXCEL_FILE}.")
-
 def scrape_url(url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -93,10 +62,9 @@ def scrape_url(url):
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # Remove script, style, nav, footer
         for el in soup(["script", "style", "nav", "footer", "header", "noscript"]):
             el.decompose()
-        # Extract text with markdown-style links so Claude can see them
+
         text_parts = []
         for element in soup.descendants:
             if isinstance(element, str):
@@ -104,7 +72,6 @@ def scrape_url(url):
                 if cleaned:
                     text_parts.append(cleaned)
             elif element.name == "a" and element.get("href"):
-                # Append the href next to the link text
                 text_parts.append(f"({element.get('href')})")
                 
         text = " ".join(text_parts)
@@ -142,7 +109,6 @@ def analyze_with_claude(scraped_text, pdf_b64):
                 }
             ]
         )
-        # Parse output safely
         content = message.content[0].text.strip()
         start_idx = content.find('[')
         end_idx = content.rfind(']')
@@ -154,136 +120,11 @@ def analyze_with_claude(scraped_text, pdf_b64):
         return None
 
 def process_jobs():
-    global client
-    
-    # Ensure API key is set before running
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        msg = "Error: ANTHROPIC_API_KEY environment variable not set."
-        print(msg)
-        return {"status": "error", "message": msg}
-        
-    init_excel()
-    
-    if not os.path.exists(PDF_FILE):
-        msg = f"Error: {PDF_FILE} not found. Please place your portfolio PDF in the directory."
-        print(msg)
-        return {"status": "error", "message": msg}
-        
-    with open(PDF_FILE, "rb") as f:
-        pdf_b64 = base64.b64encode(f.read()).decode("utf-8")
-        
-    wb = openpyxl.load_workbook(EXCEL_FILE)
-    ws = wb.active
-    
-    # We will process rows backwards so that inserting/appending rows doesn't mess up the loop index,
-    # or we can collect tasks first. Let's collect rows to process.
-    rows_to_process = []
-    for r in range(2, ws.max_row + 1):
-        company = ws.cell(row=r, column=1).value
-        url = ws.cell(row=r, column=2).value
-        matched = ws.cell(row=r, column=3).value
-        status = ws.cell(row=r, column=10).value
-        # Skip applied jobs — they're done
-        if status == "Applied":
-            continue
-        # If 'matched' is empty or contains an error from a previous run, retry it
-        if company and url and (not matched or "Error" in str(matched) or "Failed" in str(matched)):
-            rows_to_process.append((r, company, url))
-            
-    if not rows_to_process:
-        msg = "No new companies to process."
-        print(msg)
-        return {"status": "success", "message": msg}
-
-    # Track row shifts if we insert rows
-    offset = 0
-
-    for original_row, company, url in rows_to_process:
-        curr_row = original_row + offset
-        
-        # 1. Scrape
-        text = scrape_url(url)
-        # Try fallbacks if first scrape fails or is too short
-        if not text or len(text) < 200:
-            for suffix in ["/jobs", "/careers", "/openings"]:
-                base = url.rstrip('/')
-                fallback_text = scrape_url(base + suffix)
-                if fallback_text and len(fallback_text) > 200:
-                    text = fallback_text
-                    break
-                    
-        if not text:
-            ws.cell(row=curr_row, column=3).value = "Failed to scrape"
-            ws.cell(row=curr_row, column=11).value = "Failed to scrape page."
-            wb.save(EXCEL_FILE)
-            print(f"✗ {company} → Failed to scrape target page")
-            continue
-            
-        # 2. Claude API
-        results = analyze_with_claude(text, pdf_b64)
-        
-        if results is None:
-            ws.cell(row=curr_row, column=3).value = "Error parsing from Claude"
-            wb.save(EXCEL_FILE)
-            continue
-            
-        # 3. Filter out already-applied jobs
-        applied_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "applied.json")
-        applied_titles = set()
-        if os.path.exists(applied_file):
-            with open(applied_file, "r") as af:
-                for entry in json.load(af):
-                    if entry.get("company") == company:
-                        applied_titles.add(entry.get("title", "").lower().strip())
-        
-        results = [j for j in results if j.get("job_title", "").lower().strip() not in applied_titles]
-        
-        # 4. Write results
-        if len(results) == 0:
-            ws.cell(row=curr_row, column=3).value = "No matches found"
-            print(f"✗ {company} → No matches")
-        else:
-            print(f"✓ {company} → {len(results)} jobs found")
-            for i, job in enumerate(results):
-                target_row = curr_row + i
-                if i > 0:
-                    ws.insert_rows(target_row)
-                    offset += 1
-                    # Copy company and URL to the inserted row
-                    ws.cell(row=target_row, column=1).value = company
-                    ws.cell(row=target_row, column=2).value = url
-                
-                # Apply light blue formatting to input cols for inserted rows if needed
-                for col in [1, 2]:
-                    ws.cell(row=target_row, column=col).fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
-                
-                ws.cell(row=target_row, column=3).value = job.get("job_title", "")
-                ws.cell(row=target_row, column=4).value = job.get("apply_link", "")
-                ws.cell(row=target_row, column=5).value = job.get("location", "")
-                ws.cell(row=target_row, column=6).value = job.get("sponsorship", "")
-                ws.cell(row=target_row, column=7).value = job.get("entry_level", "")
-                ws.cell(row=target_row, column=8).value = job.get("date_posted", "")
-                ws.cell(row=target_row, column=9).value = job.get("match_score", "")
-                ws.cell(row=target_row, column=11).value = job.get("notes", "")
-                
-                for col in range(3, 12):
-                    if col != 10: # Status col (user fills)
-                        ws.cell(row=target_row, column=col).fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-                        
-            wb.save(EXCEL_FILE)
-            
-        time.sleep(2) # polite delay
-
-    return {"status": "success", "message": "Scraping complete!"}
-
-def process_single_company(company_name):
-    """Scan a single company by name. Reuses the same logic as process_jobs but for one row."""
+    """Scan ALL pending companies."""
     global client
     
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return {"status": "error", "message": "ANTHROPIC_API_KEY not set."}
-    
-    init_excel()
     
     if not os.path.exists(PDF_FILE):
         return {"status": "error", "message": f"{PDF_FILE} not found."}
@@ -291,38 +132,83 @@ def process_single_company(company_name):
     with open(PDF_FILE, "rb") as f:
         pdf_b64 = base64.b64encode(f.read()).decode("utf-8")
     
-    wb = openpyxl.load_workbook(EXCEL_FILE)
-    ws = wb.active
+    rows = db.get_company_rows_for_scan()
     
-    # Find the FIRST non-applied row for this company, or get URL from any row
-    target_row = None
-    company_url = None
-    for r in range(2, ws.max_row + 1):
-        if ws.cell(row=r, column=1).value == company_name:
-            if not company_url:
-                company_url = ws.cell(row=r, column=2).value
-            if ws.cell(row=r, column=10).value != "Applied":
-                target_row = r
-                break
+    if not rows:
+        return {"status": "success", "message": "No new companies to process."}
     
-    if not company_url:
+    for row in rows:
+        row_id = row["id"]
+        company = row["company_name"]
+        url = row["career_url"]
+        
+        print(f"Scanning {company}...")
+        
+        # 1. Scrape
+        text = scrape_url(url)
+        if not text or len(text) < 200:
+            for suffix in ["/jobs", "/careers", "/openings"]:
+                base = url.rstrip('/')
+                fallback_text = scrape_url(base + suffix)
+                if fallback_text and len(fallback_text) > 200:
+                    text = fallback_text
+                    break
+        
+        if not text:
+            db.set_job_status(row_id, "Failed to scrape")
+            print(f"✗ {company} → Failed to scrape")
+            continue
+        
+        # 2. Claude API
+        results = analyze_with_claude(text, pdf_b64)
+        
+        if results is None:
+            db.set_job_status(row_id, "Error parsing from Claude")
+            continue
+        
+        # 3. Filter out already-applied jobs
+        applied_titles = db.get_applied_titles_for_company(company)
+        results = [j for j in results if j.get("job_title", "").lower().strip() not in applied_titles]
+        
+        # 4. Write results
+        if len(results) == 0:
+            db.set_job_status(row_id, "No matches found")
+            print(f"✗ {company} → No matches")
+        else:
+            print(f"✓ {company} → {len(results)} jobs found")
+            # Write first result to existing row
+            db.write_job_result(row_id, results[0])
+            # Insert extra rows for additional results
+            for job in results[1:]:
+                db.insert_extra_job(company, url, job)
+        
+        time.sleep(2)  # polite delay
+
+    return {"status": "success", "message": "Scraping complete!"}
+
+def process_single_company(company_name):
+    """Scan a single company by name."""
+    global client
+    
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return {"status": "error", "message": "ANTHROPIC_API_KEY not set."}
+    
+    if not os.path.exists(PDF_FILE):
+        return {"status": "error", "message": f"{PDF_FILE} not found."}
+    
+    with open(PDF_FILE, "rb") as f:
+        pdf_b64 = base64.b64encode(f.read()).decode("utf-8")
+    
+    row_info = db.get_company_row_for_single_scan(company_name)
+    
+    if not row_info:
         return {"status": "error", "message": f"Company '{company_name}' not found in tracker."}
     
-    # If all rows are applied, insert a fresh row for new results
-    if not target_row:
-        new_row = ws.max_row + 1
-        ws.cell(row=new_row, column=1).value = company_name
-        ws.cell(row=new_row, column=2).value = company_url
-        target_row = new_row
-        wb.save(EXCEL_FILE)
+    row_id = row_info["id"]
+    url = row_info["url"]
     
-    url = company_url
-    
-    # Clear previous results on this row (but preserve the status column)
-    for col in range(3, 12):
-        if col != 10:
-            ws.cell(row=target_row, column=col).value = None
-    wb.save(EXCEL_FILE)
+    # Clear previous results
+    db.clear_job_row(row_id)
     
     # Scrape
     text = scrape_url(url)
@@ -335,66 +221,33 @@ def process_single_company(company_name):
                 break
     
     if not text:
-        ws.cell(row=target_row, column=3).value = "Failed to scrape"
-        ws.cell(row=target_row, column=11).value = "Failed to scrape page."
-        wb.save(EXCEL_FILE)
+        db.set_job_status(row_id, "Failed to scrape")
         return {"status": "error", "message": f"Failed to scrape {company_name}"}
     
     # Claude API
     results = analyze_with_claude(text, pdf_b64)
     
     if results is None:
-        ws.cell(row=target_row, column=3).value = "Error parsing from Claude"
-        wb.save(EXCEL_FILE)
-        return {"status": "error", "message": f"Claude failed to parse results for {company_name}"}
+        db.set_job_status(row_id, "Error parsing from Claude")
+        return {"status": "error", "message": f"Claude failed for {company_name}"}
     
     if len(results) == 0:
-        ws.cell(row=target_row, column=3).value = "No matches found"
-        wb.save(EXCEL_FILE)
+        db.set_job_status(row_id, "No matches found")
         return {"status": "success", "message": f"{company_name}: No matching jobs found."}
     
-    # Filter out jobs the user has already applied to
-    applied_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "applied.json")
-    applied_titles = set()
-    if os.path.exists(applied_file):
-        with open(applied_file, "r") as af:
-            for entry in json.load(af):
-                if entry.get("company") == company_name:
-                    applied_titles.add(entry.get("title", "").lower().strip())
-    
+    # Filter out already-applied jobs
+    applied_titles = db.get_applied_titles_for_company(company_name)
     results = [j for j in results if j.get("job_title", "").lower().strip() not in applied_titles]
     
     if len(results) == 0:
-        # Delete the temp row so it doesn't show as junk in the UI
-        ws.delete_rows(target_row)
-        wb.save(EXCEL_FILE)
+        db.delete_empty_row(row_id)
         return {"status": "success", "message": f"{company_name}: All found jobs were already applied to."}
     
     # Write results
-    for i, job in enumerate(results):
-        row = target_row + i
-        if i > 0:
-            ws.insert_rows(row)
-            ws.cell(row=row, column=1).value = company_name
-            ws.cell(row=row, column=2).value = url
-        
-        for col in [1, 2]:
-            ws.cell(row=row, column=col).fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
-        
-        ws.cell(row=row, column=3).value = job.get("job_title", "")
-        ws.cell(row=row, column=4).value = job.get("apply_link", "")
-        ws.cell(row=row, column=5).value = job.get("location", "")
-        ws.cell(row=row, column=6).value = job.get("sponsorship", "")
-        ws.cell(row=row, column=7).value = job.get("entry_level", "")
-        ws.cell(row=row, column=8).value = job.get("date_posted", "")
-        ws.cell(row=row, column=9).value = job.get("match_score", "")
-        ws.cell(row=row, column=11).value = job.get("notes", "")
-        
-        for col in range(3, 12):
-            if col != 10:
-                ws.cell(row=row, column=col).fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    db.write_job_result(row_id, results[0])
+    for job in results[1:]:
+        db.insert_extra_job(company_name, url, job)
     
-    wb.save(EXCEL_FILE)
     return {"status": "success", "message": f"{company_name}: {len(results)} job(s) found!"}
 
 if __name__ == "__main__":

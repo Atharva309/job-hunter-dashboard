@@ -285,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             container.innerHTML = '';
-            data.jobs.forEach((job, index) => {
+            data.jobs.forEach((job) => {
                 const item = document.createElement('div');
                 item.className = 'applied-item';
                 
@@ -296,12 +296,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         <strong>${job.title}</strong>
                         <small>${job.company} · ${job.location || 'N/A'} · Applied ${date}</small>
                     </div>
-                    <button class="btn-remove" data-index="${index}">Remove</button>
+                    <button class="btn-remove">Remove</button>
                 `;
 
                 item.querySelector('.btn-remove').addEventListener('click', async () => {
                     try {
-                        const r = await fetch(`/api/applied/${index}`, { method: 'DELETE' });
+                        const r = await fetch(`/api/applied/${job.id}`, { method: 'DELETE' });
                         const result = await r.json();
                         updateAppliedCount(result.count);
                         fetchApplied();
