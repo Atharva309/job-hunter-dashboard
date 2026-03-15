@@ -1,0 +1,42 @@
+🚀 The Job Hunter AI Dashboard: In-Depth Explanation
+
+1. The Core Problem It Solves
+Hunting for jobs manually involves opening dozens of company career pages, scrolling past hundreds of irrelevant roles (senior, manager, unrelated departments), and trying to figure out if it fits your specific status (F1 Visa, Data Science, Entry Level). 
+
+The Solution: You built a centralized dashboard where you just drop in a company's career URL. The application automatically scrapes the live site, reads all the raw text, and uses a state-of-the-art Large Language Model (Claude 3.5 Sonnet) to compare the company's open roles against your actual PDF Resume. It acts as an AI recruiter, filtering out the noise and only showing you roles you should actually spend time applying to.
+
+2. The Tech Stack Breakdown
+
+Frontend: Vanilla HTML/CSS/JS
+- UI Design: You built a completely custom, responsive dashboard using pure HTML and CSS. It uses modern CSS techniques like Glassmorphism (blur effects, translucent cards), Flexbox/Grid for layout, and smooth hover/transition micro-animations. It feels like a premium SaaS product without the heavy overhead of a framework like React.
+- Client Logic: The script.js handles DOM manipulation and asynchronous fetch() calls to the backend API. It dynamically renders the job cards, updates status badges, and handles the "Apply" and "Delete Company" logic in real-time.
+
+Backend: FastAPI (Python)
+- The Engine: The backend is powered by FastAPI, one of the fastest modern Python web frameworks. It handles routing (/api/jobs, /api/companies) asynchronously.
+- The Eager Server: We use Uvicorn as the ASGI web server, which provides lightning-fast request handling in production.
+- Scraping: When you scan a company, the backend uses Requests to fetch the raw HTML of the career page, and BeautifulSoup4 to parse the DOM tree. It explicitly strips out <script>, <style>, and <footer> tags to drastically reduce the token count, leaving only the pure, relevant text of the job postings.
+
+AI Brain: Anthropic Claude 3.5 Sonnet
+- The Intelligence: The cleaned HTML text, combined with a Base64 encoded version of your actual portfolio.pdf resume, is sent to the Anthropic API.
+- System Prompting: Claude is given a highly engineered system prompt acting as your personal recruiter. It is explicitly told to look for F1 sponsorship, entry-level Data Science/Machine Learning roles, and roles posted within the last 60 days.
+- Structured Output: Claude reads the scrape, compares it to your resume, and is forced to reply in pure JSON format, calculating a match_score for every valid job.
+
+Data Layer: Neon (PostgreSQL)
+- Persistence: Initially, data was stored in an Excel spreadsheet, but we migrated to a production-grade relational database to ensure the app could be hosted in the cloud without waking up to erased data.
+- Neon Tech: We use Neon, a serverless Postgres provider. It allows the database to instantly spin up, handle queries via Python's psycopg2 adapter, and go to sleep when not in use. It stores your company list, the AI's matched job results, and the history of jobs you have already clicked "Apply" on.
+
+Deployment: Render (Dockerized Web Service)
+- Cloud Hosting: The entire Python backend and static frontend are deployed seamlessly on Render. Render hooks directly into your GitHub repository; whenever code is pushed, it automatically clones the repo, installs dependencies via requirements.txt, and boots the uvicorn server behind an automated HTTPS load balancer.
+
+3. The Lifecycle of a "Scan"
+1. You click "Scan" on a company in the UI. 
+2. The JS frontend sends an API request to FastAPI.
+3. FastAPI looks up the company URL in PostgreSQL.
+4. BeautifulSoup4 grabs the live HTML from the company.
+5. The HTML + Resume PDF is sent to Claude 3.5.
+6. Claude returns an array of matched jobs in JSON.
+7. FastAPI compares Claude's results against your applied Postgres table to ensure it doesn't show you jobs you already applied for.
+8. FastAPI saves the new, valid jobs into the jobs Postgres table.
+9. The Frontend re-fetches the jobs from the database and renders the beautiful new Job Cards on your screen.
+
+You built a highly sophisticated full-stack AI agent. It uses an LLM for semantic reasoning rather than just chat, handles web scraping, manages a relational database, and runs in the cloud. It's an incredible project to talk about in an interview!
